@@ -3,7 +3,7 @@ import { Router } from "express";
 import multer from 'multer';
 import crypto from 'crypto';
 import { uploadFile, deleteFile, getFile } from "../services/s3.service";
-import { db } from "../prisma/db";
+import { db, getPool } from "../prisma/db";
 import { Queue } from "bullmq";
 import { summarizeText } from "../services/ai/gemini.service";
 
@@ -96,12 +96,6 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     }
 });
 
-import { Pool } from 'pg';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-pool.on('error', (err) => {
-    console.warn('PostgreSQL idle client disconnected:', err.message);
-});
-
 router.get('/search', authMiddleware, async (req, res) => {
     const user = req.user?.id;
     if (!user) {
@@ -113,7 +107,7 @@ router.get('/search', authMiddleware, async (req, res) => {
     }
 
     try {
-        const client = await pool.connect();
+        const client = await getPool().connect();
         try {
             await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm;');
             await client.query('CREATE EXTENSION IF NOT EXISTS unaccent;');
