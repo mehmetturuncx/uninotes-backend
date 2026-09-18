@@ -4,13 +4,14 @@
 
 **Blocked by:** 02: Document-Folder Association and Filtered Listing
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] `Document` model schema includes an `isLocked: Boolean` field defaulting to `false`.
-- [ ] Document owner can toggle lock state via `PATCH /documents/:id/lock` with `{ isLocked: boolean }`.
-- [ ] Non-owner attempting to lock/unlock a document receives `403 Forbidden`.
-- [ ] Any authenticated student can move an unlocked document via `PATCH /documents/:id/folder` with `{ folderId: string | null }`.
-- [ ] Moving to a non-existent `folderId` returns `404 Not Found`.
-- [ ] If a document is locked (`isLocked: true`), non-owners attempting to move it receive `403 Forbidden`. The owner can still move their locked document.
-- [ ] Deleting a document (`DELETE /documents/:id`) requires ownership; if locked, deletion by non-owner is blocked (`403 Forbidden`).
-- [ ] End-to-end tests verify locking, unauthorized lock attempts, moving unlocked files, and lock-protected movement/deletion.
+- [x] `Document` model schema includes an `isLocked: Boolean` field defaulting to `false`.
+- [x] Document owner can toggle lock state via `PATCH /documents/:id/lock` with `{ isLocked: boolean }`.
+- [x] Non-owner attempting to lock/unlock a document receives `403 Forbidden`.
+- [x] Any authenticated student can move an unlocked document via `PATCH /documents/:id/folder` with `{ folderId: string | null }`.
+- [x] Moving to a non-existent `folderId` returns `404 Not Found`.
+- [x] If a document is locked (`isLocked: true`), non-owners attempting to move it receive `403 Forbidden`. The owner can still move their locked document.
+- [x] Deleting a document (`DELETE /documents/:id`) requires ownership; if locked, deletion by non-owner is blocked (`403 Forbidden`).
+- [x] End-to-end tests verify locking, unauthorized lock attempts, moving unlocked files, and lock-protected movement/deletion.
+

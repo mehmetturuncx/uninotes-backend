@@ -249,5 +249,225 @@ describe('Document Upload & Deduplication API', () => {
       expect(res.body.documents[0].folderId).toBe(folderA.id);
     });
   });
+
+  describe('PATCH /documents/:id/lock', () => {
+    it('Token olmadan istek atıldığında 401 dönmeli', async () => {
+      const response = await request(app)
+        .patch('/documents/00000000-0000-0000-0000-000000000000/lock')
+        .send({ isLocked: true });
+      expect(response.status).toBe(401);
+    });
+
+    it('Var olmayan bir belge için 404 dönmeli', async () => {
+      const { token } = await getAuthToken('lock_404@uni.edu', 'CODE_LOCK_404');
+      const response = await request(app)
+        .patch('/documents/00000000-0000-0000-0000-000000000000/lock')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ isLocked: true });
+      expect(response.status).toBe(404);
+    });
+
+    it('Dosya sahibi kilit durumunu değiştirebilmeli (isLocked: true/false)', async () => {
+      const { token, user } = await getAuthToken('lock_owner@uni.edu', 'CODE_LOCK_OWNER');
+      const doc = await db.orm.public.Document.create({
+        title: 'kilitli-not.pdf',
+        url: 'http://s3.local/kilit.pdf',
+        hash: 'hash-lock-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        isLocked: false
+      });
+
+      // 1. Kilitle
+      const resLock = await request(app)
+        .patch(`/documents/${doc.id}/lock`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ isLocked: true });
+
+      expect(resLock.status).toBe(200);
+      expect(resLock.body.document.isLocked).toBe(true);
+
+      const dbDocLocked = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDocLocked?.isLocked).toBe(true);
+
+      // 2. Kilidi aç
+      const resUnlock = await request(app)
+        .patch(`/documents/${doc.id}/lock`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ isLocked: false });
+
+      expect(resUnlock.status).toBe(200);
+      expect(resUnlock.body.document.isLocked).toBe(false);
+
+      const dbDocUnlocked = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDocUnlocked?.isLocked).toBe(false);
+    });
+
+    it('Dosya sahibi olmayan bir kullanıcı kilit durumunu değiştirmeye çalıştığında 403 dönmeli', async () => {
+      const { user: owner } = await getAuthToken('doc_owner@uni.edu', 'CODE_DOC_OWNER');
+      const { token: otherToken } = await getAuthToken('doc_other@uni.edu', 'CODE_DOC_OTHER');
+
+      const doc = await db.orm.public.Document.create({
+        title: 'baskasinin-notu.pdf',
+        url: 'http://s3.local/baskasi.pdf',
+        hash: 'hash-lock-2',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: owner.id,
+        status: 'COMPLETED',
+        isLocked: false
+      });
+
+      const res = await request(app)
+        .patch(`/documents/${doc.id}/lock`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ isLocked: true });
+
+      expect(res.status).toBe(403);
+
+      const dbDoc = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDoc?.isLocked).toBe(false);
+    });
+  });
+
+  describe('PATCH /documents/:id/folder', () => {
+    it('Token olmadan istek atıldığında 401 dönmeli', async () => {
+      const response = await request(app)
+        .patch('/documents/00000000-0000-0000-0000-000000000000/folder')
+        .send({ folderId: null });
+      expect(response.status).toBe(401);
+    });
+
+    it('Var olmayan bir belge taşınmak istendiğinde 404 dönmeli', async () => {
+      const { token } = await getAuthToken('move_doc_404@uni.edu', 'CODE_MOVE_D404');
+      const response = await request(app)
+        .patch('/documents/00000000-0000-0000-0000-000000000000/folder')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ folderId: null });
+      expect(response.status).toBe(404);
+    });
+
+    it('Var olmayan bir klasöre taşınmak istendiğinde 404 dönmeli', async () => {
+      const { token, user } = await getAuthToken('move_f_404@uni.edu', 'CODE_MOVE_F404');
+      const doc = await db.orm.public.Document.create({
+        title: 'move-test.pdf',
+        url: 'http://s3.local/move-test.pdf',
+        hash: 'hash-move-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        isLocked: false
+      });
+
+      const response = await request(app)
+        .patch(`/documents/${doc.id}/folder`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ folderId: '00000000-0000-0000-0000-000000000000' });
+
+      expect(response.status).toBe(404);
+    });
+
+    it('Kilitli olmayan bir belge herhangi bir kullanıcı tarafından başka klasöre ve kök dizine taşınabilmeli', async () => {
+      const { user: uploader } = await getAuthToken('uploader@uni.edu', 'CODE_UPLOADER');
+      const { token: studentToken } = await getAuthToken('student@uni.edu', 'CODE_STUDENT');
+
+      const folderA = await db.orm.public.Folder.create({ name: 'Hedef Klasör', parentId: null });
+      const doc = await db.orm.public.Document.create({
+        title: 'unlocked-doc.pdf',
+        url: 'http://s3.local/unlocked.pdf',
+        hash: 'hash-move-2',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: uploader.id,
+        status: 'COMPLETED',
+        folderId: null,
+        isLocked: false
+      });
+
+      // 1. Hedef klasöre taşı
+      const resMove = await request(app)
+        .patch(`/documents/${doc.id}/folder`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ folderId: folderA.id });
+
+      expect(resMove.status).toBe(200);
+      expect(resMove.body.document.folderId).toBe(folderA.id);
+
+      const dbDocMoved = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDocMoved?.folderId).toBe(folderA.id);
+
+      // 2. Kök dizine geri taşı (folderId: null)
+      const resRoot = await request(app)
+        .patch(`/documents/${doc.id}/folder`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ folderId: null });
+
+      expect(resRoot.status).toBe(200);
+      expect(resRoot.body.document.folderId).toBeNull();
+
+      const dbDocRoot = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDocRoot?.folderId).toBeNull();
+    });
+
+    it('Kilitli bir belgeyi sahibi olmayan bir kullanıcı taşımaya çalıştığında 403 dönmeli', async () => {
+      const { user: owner } = await getAuthToken('locked_owner@uni.edu', 'CODE_L_OWNER');
+      const { token: otherToken } = await getAuthToken('locked_other@uni.edu', 'CODE_L_OTHER');
+      const folder = await db.orm.public.Folder.create({ name: 'Gizli Klasör', parentId: null });
+
+      const doc = await db.orm.public.Document.create({
+        title: 'locked-doc.pdf',
+        url: 'http://s3.local/locked.pdf',
+        hash: 'hash-move-3',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: owner.id,
+        status: 'COMPLETED',
+        folderId: null,
+        isLocked: true
+      });
+
+      const res = await request(app)
+        .patch(`/documents/${doc.id}/folder`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ folderId: folder.id });
+
+      expect(res.status).toBe(403);
+
+      const dbDoc = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDoc?.folderId).toBeNull();
+    });
+
+    it('Kilitli bir belgeyi kendi sahibi başka bir klasöre taşıyabilmeli', async () => {
+      const { token: ownerToken, user: owner } = await getAuthToken('owner_mover@uni.edu', 'CODE_O_MOVER');
+      const folder = await db.orm.public.Folder.create({ name: 'Sahip Klasörü', parentId: null });
+
+      const doc = await db.orm.public.Document.create({
+        title: 'owner-locked-doc.pdf',
+        url: 'http://s3.local/owner-locked.pdf',
+        hash: 'hash-move-4',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: owner.id,
+        status: 'COMPLETED',
+        folderId: null,
+        isLocked: true
+      });
+
+      const res = await request(app)
+        .patch(`/documents/${doc.id}/folder`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ folderId: folder.id });
+
+      expect(res.status).toBe(200);
+      expect(res.body.document.folderId).toBe(folder.id);
+
+      const dbDoc = await db.orm.public.Document.where({ id: doc.id }).first();
+      expect(dbDoc?.folderId).toBe(folder.id);
+    });
+  });
 });
+
 

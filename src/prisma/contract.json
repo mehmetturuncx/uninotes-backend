@@ -81,6 +81,13 @@
                   "kind": "scalar"
                 }
               },
+              "isLocked": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
               "mimeType": {
                 "nullable": false,
                 "type": {
@@ -196,6 +203,9 @@
                 },
                 "id": {
                   "column": "id"
+                },
+                "isLocked": {
+                  "column": "isLocked"
                 },
                 "mimeType": {
                   "column": "mimeType"
@@ -538,6 +548,15 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "isLocked": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
+                },
                 "mimeType": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -860,7 +879,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "761a436d8fa93ddf9c9efd280e1e911b7cd45c0e9cda06e5a4cd2ace58ab0613"
+    "storageHash": "7376574f83b414e60ed911ad80449c8c360ab335169ad82ec280f06ccb0dd21b"
   },
   "execution": {
     "executionHash": "5b3b392d2cf0305b0a5140ea5d7d39786b99ef7fdc9ab347958f194bdb2345aa",
