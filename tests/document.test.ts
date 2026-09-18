@@ -29,9 +29,9 @@ describe('Document Upload & Deduplication API', () => {
   });
 
   beforeEach(async () => {
-    await db.orm.public.Document.where({}).delete();
-    await db.orm.public.User.where({}).delete();
-    await db.orm.public.InviteCode.where({}).delete();
+    const { getPool } = await import('../src/prisma/db');
+    const pool = getPool();
+    await pool.query('TRUNCATE TABLE "folder", "document", "user", "inviteCode" CASCADE;');
     vi.clearAllMocks();
   });
 
@@ -44,6 +44,34 @@ describe('Document Upload & Deduplication API', () => {
   };
 
   describe('POST /documents/upload', () => {
+    it('Geçerli bir folderId ile dosya yüklendiğinde dosya o klasöre atanmalı', async () => {
+      const { token } = await getAuthToken('test_folder_upload@uni.edu', 'CODE_FOLDER_1');
+      const folder = await db.orm.public.Folder.create({ name: 'Fizik Notları', parentId: null });
+      const fileBuffer = Buffer.from('fizik ders notu');
+
+      const response = await request(app)
+        .post('/documents/upload')
+        .set('Authorization', `Bearer ${token}`)
+        .field('folderId', folder.id)
+        .attach('file', fileBuffer, 'fizik.pdf');
+
+      expect(response.status).toBe(201);
+      expect(response.body.document).toHaveProperty('folderId', folder.id);
+    });
+
+    it('Var olmayan bir folderId ile yükleme yapılmaya çalışıldığında 404 dönmeli', async () => {
+      const { token } = await getAuthToken('test_folder_invalid@uni.edu', 'CODE_FOLDER_2');
+      const fileBuffer = Buffer.from('gecersiz klasor testi');
+
+      const response = await request(app)
+        .post('/documents/upload')
+        .set('Authorization', `Bearer ${token}`)
+        .field('folderId', '00000000-0000-0000-0000-000000000000')
+        .attach('file', fileBuffer, 'gecersiz.pdf');
+
+      expect(response.status).toBe(404);
+      expect(response.body).toHaveProperty('message');
+    });
     it('Geçerli bir dosya yüklendiğinde S3 mock çağrılmalı, DB ye PENDING kaydedilmeli ve BullMQ kuyruğuna iş eklenmeli', async () => {
       const { token } = await getAuthToken('test1@uni.edu', 'CODE1');
       const fileBuffer = Buffer.from('dummy pdf content');
@@ -130,4 +158,96 @@ describe('Document Upload & Deduplication API', () => {
       expect(response.body.message).toMatch(/unsupported/i);
     });
   });
+
+  describe('GET /documents', () => {
+    it('Token olmadan istek atıldığında 401 dönmeli', async () => {
+      const response = await request(app).get('/documents');
+      expect(response.status).toBe(401);
+    });
+
+    it('parametre verilmediğinde veya folderId=root olduğunda sadece kök dizindeki (folderId null) belgeleri dönmeli', async () => {
+      const { token, user } = await getAuthToken('list_test_root@uni.edu', 'CODE_LIST_1');
+      const folder = await db.orm.public.Folder.create({ name: 'Matematik', parentId: null });
+
+      const rootDoc = await db.orm.public.Document.create({
+        title: 'root-doc.pdf',
+        url: 'http://s3.local/root-doc.pdf',
+        hash: 'hash-root-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: null
+      });
+
+      await db.orm.public.Document.create({
+        title: 'sub-doc.pdf',
+        url: 'http://s3.local/sub-doc.pdf',
+        hash: 'hash-sub-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folder.id
+      });
+
+      // 1. Parametre verilmediğinde (varsayılan: root)
+      const resNoParam = await request(app)
+        .get('/documents')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(resNoParam.status).toBe(200);
+      expect(resNoParam.body.documents).toHaveLength(1);
+      expect(resNoParam.body.documents[0].id).toBe(rootDoc.id);
+      expect(resNoParam.body.documents[0].folderId).toBeNull();
+
+      // 2. folderId=root verildiğinde
+      const resRoot = await request(app)
+        .get('/documents?folderId=root')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(resRoot.status).toBe(200);
+      expect(resRoot.body.documents).toHaveLength(1);
+      expect(resRoot.body.documents[0].id).toBe(rootDoc.id);
+      expect(resRoot.body.documents[0].folderId).toBeNull();
+    });
+
+    it('folderId=<id> verildiğinde sadece o klasördeki belgeleri dönmeli', async () => {
+      const { token, user } = await getAuthToken('list_test_folder@uni.edu', 'CODE_LIST_2');
+      const folderA = await db.orm.public.Folder.create({ name: 'Fizik', parentId: null });
+      const folderB = await db.orm.public.Folder.create({ name: 'Kimya', parentId: null });
+
+      const docA = await db.orm.public.Document.create({
+        title: 'fizik-notu.pdf',
+        url: 'http://s3.local/fizik.pdf',
+        hash: 'hash-fizik-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderA.id
+      });
+
+      await db.orm.public.Document.create({
+        title: 'kimya-notu.pdf',
+        url: 'http://s3.local/kimya.pdf',
+        hash: 'hash-kimya-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderB.id
+      });
+
+      const res = await request(app)
+        .get(`/documents?folderId=${folderA.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.documents).toHaveLength(1);
+      expect(res.body.documents[0].id).toBe(docA.id);
+      expect(res.body.documents[0].folderId).toBe(folderA.id);
+    });
+  });
 });
+
