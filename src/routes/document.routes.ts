@@ -35,7 +35,7 @@ const ocr_queue = new Queue('ocr-queue', {
 
 router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
     const user = req.user?.id;
-
+    const folderId = req.body.folderId;
 
     if (!user) {
         return res.status(401).json({ message: "User could bot be verified!" });
@@ -43,6 +43,16 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
 
     if (!req.file) {
         return res.status(400).json({ message: "File not found!" });
+    }
+
+    if (folderId) {
+        const folderControl = await db.orm.public.Folder.where({
+            id: folderId
+        }).first();
+
+        if(!folderControl) {
+            return res.status(404).json({message: "Folder not found!"});
+        }
     }
 
     if (!allowed_mime_types.includes(req.file.mimetype)) {
@@ -67,7 +77,8 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             size: req.file.buffer.length,
             mimeType: req.file.mimetype,
             userId: user,
-            status: "PENDING"
+            status: "PENDING",
+            folderId: folderId || null
         });
 
         if (createdDoc) {
@@ -154,12 +165,23 @@ router.get('/search', authMiddleware, async (req, res) => {
 
 router.get('/', authMiddleware, async (req, res) => {
     const user = req.user?.id;
+    const folderId = req.query.folderId as string;
+
     if (!user) {
         return res.status(401).json({ message: "Unauthorized" });
     }
 
+    let targetFolderId: string | null = null;
+
+    if(!folderId || folderId === 'root') {
+        targetFolderId = null;
+    }
+    else {
+        targetFolderId = folderId;
+    }
+
     try {
-        const documents = await db.orm.public.Document.where({})
+        const documents = await db.orm.public.Document.where({folderId: targetFolderId})
             .orderBy(doc => doc.createdAt.desc())
             .all();
 

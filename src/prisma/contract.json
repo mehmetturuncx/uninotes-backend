@@ -60,6 +60,13 @@
                   }
                 }
               },
+              "folderId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "hash": {
                 "nullable": false,
                 "type": {
@@ -145,6 +152,21 @@
               }
             },
             "relations": {
+              "folder": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": [
+                    "folderId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Folder",
+                  "namespace": "public"
+                }
+              },
               "user": {
                 "cardinality": "N:1",
                 "on": {
@@ -165,6 +187,9 @@
               "fields": {
                 "createdAt": {
                   "column": "createdAt"
+                },
+                "folderId": {
+                  "column": "folderId"
                 },
                 "hash": {
                   "column": "hash"
@@ -258,6 +283,21 @@
                 },
                 "to": {
                   "model": "Folder",
+                  "namespace": "public"
+                }
+              },
+              "documents": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "folderId"
+                  ]
+                },
+                "to": {
+                  "model": "Document",
                   "namespace": "public"
                 }
               },
@@ -483,6 +523,11 @@
                     "precision": 6
                   }
                 },
+                "folderId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "hash": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -565,9 +610,33 @@
                     "namespaceId": "public",
                     "tableName": "user"
                   }
+                },
+                {
+                  "source": {
+                    "columns": [
+                      "folderId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "document"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "folder"
+                  }
                 }
               ],
               "indexes": [
+                {
+                  "columns": [
+                    "folderId"
+                  ],
+                  "name": "document_folderId_idx_5985e562",
+                  "prefix": "document_folderId_idx",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "userId"
@@ -791,7 +860,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "4248794ac6647b23b9858dca22d7ce346217f850b6ab194d55a5c360bc84c4a5"
+    "storageHash": "761a436d8fa93ddf9c9efd280e1e911b7cd45c0e9cda06e5a4cd2ace58ab0613"
   },
   "execution": {
     "executionHash": "5b3b392d2cf0305b0a5140ea5d7d39786b99ef7fdc9ab347958f194bdb2345aa",

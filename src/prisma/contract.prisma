@@ -39,6 +39,8 @@ model Document {
   user      User           @relation(fields: [userId], references: [id])
   createdAt Timestamptz(6) @default(now())
   updatedAt temporal.updatedAt()
+  folderId   String?
+  folder     Folder? @relation(fields: [folderId], references: [id])
 }
 
 model Folder {
@@ -49,4 +51,5 @@ model Folder {
   children Folder[] @relation("FolderHierarchy")
   createdAt Timestamptz(6) @default(now())
   updatedAt temporal.updatedAt()
+  documents Document[]
 }
