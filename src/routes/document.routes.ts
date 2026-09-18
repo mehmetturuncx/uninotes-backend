@@ -50,8 +50,8 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             id: folderId
         }).first();
 
-        if(!folderControl) {
-            return res.status(404).json({message: "Folder not found!"});
+        if (!folderControl) {
+            return res.status(404).json({ message: "Folder not found!" });
         }
     }
 
@@ -173,7 +173,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     let targetFolderId: string | null = null;
 
-    if(!folderId || folderId === 'root') {
+    if (!folderId || folderId === 'root') {
         targetFolderId = null;
     }
     else {
@@ -181,7 +181,7 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     try {
-        const documents = await db.orm.public.Document.where({folderId: targetFolderId})
+        const documents = await db.orm.public.Document.where({ folderId: targetFolderId })
             .orderBy(doc => doc.createdAt.desc())
             .all();
 
@@ -263,8 +263,8 @@ router.post('/:id/summarize', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: "Document not found!" });
         }
 
-        if(doc.summary) {
-            return res.status(200).json({ summary: doc.summary, cached: true});
+        if (doc.summary) {
+            return res.status(200).json({ summary: doc.summary, cached: true });
         }
 
         if (doc.status === "FAILED") {
@@ -288,11 +288,80 @@ router.post('/:id/summarize', authMiddleware, async (req, res) => {
         await db.orm.public.Document.where({ id }).update({ summary });
 
         return res.status(200).json({ summary, cached: false });
-        
+
     }
-    catch(error) {
+    catch (error) {
         console.error("Summarize error: ", error);
-        return res.status(500).json({ message: "Something went wrong while summarizing the document!"});
+        return res.status(500).json({ message: "Something went wrong while summarizing the document!" });
+    }
+});
+
+router.patch('/:id/lock', authMiddleware, async (req, res) => {
+    const { isLocked } = req.body;
+    const user = req.user?.id;
+
+    if (!user) {
+        return res.status(401).json({ message: "Unauthorized" });
+    }
+    const documentId = req.params.id as string;
+
+    try {
+        const document = await db.orm.public.Document.where({ id: documentId }).first();
+
+        if (!document) {
+            return res.status(404).json({ message: "Document not found!" });
+        }
+
+        if (document.userId !== user) {
+            return res.status(403).json({ message: "Forbidden" });
+        }
+
+        const updatedDoc = await db.orm.public.Document.where({ id: documentId }).update({
+            isLocked: Boolean(isLocked)
+        });
+
+        return res.status(200).json({ document: updatedDoc });
+    }
+    catch (err) {
+        console.error("Document lock error: ", err);
+        return res.status(500).json({ message: "Something went wrong while updating the document." });
+    }
+});
+
+router.patch('/:id/folder', authMiddleware, async (req, res) => {
+    const documentId = req.params.id as string;
+    const { folderId } = req.body;
+    const user = req.user?.id;
+
+    if (!user) {
+        return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+        const document = await db.orm.public.Document.where({ id: documentId }).first();
+
+        if (!document) {
+            return res.status(404).json({ message: "Document not found!" });
+        }
+
+        if (document.isLocked && document.userId !== user) {
+            return res.status(403).json({ message: "Forbidden" });
+        }
+
+        if (folderId) {
+            const targetFolder = await db.orm.public.Folder.where({ id: folderId }).first();
+
+            if (!targetFolder) {
+                return res.status(404).json({ message: "Target folder not found." });
+            }
+        }
+        const updatedDoc = await db.orm.public.Document.where({ id: documentId }).update({ folderId: folderId || null });
+
+        return res.status(200).json({ document: updatedDoc });
+    }
+    catch (err) {
+        console.error("Document move error: ", err);
+        return res.status(500).json({ message: "Something went wrong while moving the document." });
     }
 });
 

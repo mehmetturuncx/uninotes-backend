@@ -41,6 +41,7 @@ model Document {
   updatedAt temporal.updatedAt()
   folderId   String?
   folder     Folder? @relation(fields: [folderId], references: [id])
+  isLocked   Boolean @default(false)
 }
 
 model Folder {
