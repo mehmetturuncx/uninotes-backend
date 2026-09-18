@@ -40,3 +40,13 @@ model Document {
   createdAt Timestamptz(6) @default(now())
   updatedAt temporal.updatedAt()
 }
+
+model Folder {
+  id String @id @default(uuid())
+  name String 
+  parentId String?
+  parent Folder? @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderHierarchy")
+  createdAt Timestamptz(6) @default(now())
+  updatedAt temporal.updatedAt()
+}
