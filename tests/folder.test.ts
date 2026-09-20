@@ -1,5 +1,12 @@
-import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import request from 'supertest';
+
+export const deleteFileMock = vi.fn().mockResolvedValue(undefined);
+vi.mock('../src/services/s3.service', () => ({
+  uploadFile: vi.fn().mockResolvedValue('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf'),
+  deleteFile: deleteFileMock,
+  getFile: vi.fn().mockResolvedValue(Buffer.from('dummy'))
+}));
 
 let app: any;
 let db: any;
@@ -11,6 +18,7 @@ describe('Folder Management API: POST /folders', () => {
   });
 
   beforeEach(async () => {
+    deleteFileMock.mockClear();
     const { getPool } = await import('../src/prisma/db');
     const pool = getPool();
     await pool.query('TRUNCATE TABLE "folder", "document", "user", "inviteCode" CASCADE;');
@@ -257,5 +265,190 @@ describe('Folder Management API: POST /folders', () => {
       expect(response.body.message).toMatch(/cannot move.*itself.*descendant/i);
     });
   });
+
+  describe('DELETE /folders/:id', () => {
+    it('Token olmadan istek atıldığında 401 Unauthorized dönmeli', async () => {
+      const response = await request(app)
+        .delete('/folders/00000000-0000-0000-0000-000000000000');
+
+      expect(response.status).toBe(401);
+    });
+
+    it('Var olmayan bir klasör silinmeye çalışıldığında 404 Not Found dönmeli', async () => {
+      const { token } = await getAuthToken('del_404@uni.edu', 'INV-DEL404');
+      const response = await request(app)
+        .delete('/folders/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('İçinde belge veya alt klasör olmayan boş bir klasör başarıyla silinebilmeli', async () => {
+      const { token } = await getAuthToken('del_empty@uni.edu', 'INV-DELEMPTY');
+      const folder = await db.orm.public.Folder.create({ name: 'Boş Klasör', parentId: null });
+
+      const response = await request(app)
+        .delete(`/folders/${folder.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('message');
+
+      const checkDb = await db.orm.public.Folder.where({ id: folder.id }).first();
+      expect(checkDb).toBeNull();
+    });
+
+    it('İçinde kilitli olmayan belgeler ve alt klasörler olan klasör ağacı başarıyla silinebilmeli (cascade)', async () => {
+      const { token, user } = await getAuthToken('del_tree@uni.edu', 'INV-DELTREE');
+
+      // Ağaç: Ana (folderA) -> Alt 1 (folderB) -> Alt 2 (folderC)
+      const folderA = await db.orm.public.Folder.create({ name: 'Ana Fakülte', parentId: null });
+      const folderB = await db.orm.public.Folder.create({ name: 'Bölüm', parentId: folderA.id });
+      const folderC = await db.orm.public.Folder.create({ name: 'Ders', parentId: folderB.id });
+
+      // Dokümanlar
+      const docA = await db.orm.public.Document.create({
+        title: 'docA.pdf',
+        url: 'http://s3.local/docA.pdf',
+        hash: 'hash-del-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderA.id,
+        isLocked: false
+      });
+
+      const docB = await db.orm.public.Document.create({
+        title: 'docB.pdf',
+        url: 'http://s3.local/docB.pdf',
+        hash: 'hash-del-2',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderB.id,
+        isLocked: false
+      });
+
+      const docC = await db.orm.public.Document.create({
+        title: 'docC.pdf',
+        url: 'http://s3.local/docC.pdf',
+        hash: 'hash-del-3',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderC.id,
+        isLocked: false
+      });
+
+      const response = await request(app)
+        .delete(`/folders/${folderA.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+
+      // Veritabanında klasörlerin hiçbiri kalmamalı
+      const remainingFolders = await db.orm.public.Folder.where({}).all();
+      expect(remainingFolders).toHaveLength(0);
+
+      // Veritabanında bu dokümanların hiçbiri kalmamalı
+      const remainingDocs = await db.orm.public.Document.where({}).all();
+      expect(remainingDocs).toHaveLength(0);
+
+      // S3 deleteFile 3 doküman için de çağrılmış olmalı
+      expect(deleteFileMock).toHaveBeenCalledTimes(3);
+      expect(deleteFileMock).toHaveBeenCalledWith('http://s3.local/docA.pdf');
+      expect(deleteFileMock).toHaveBeenCalledWith('http://s3.local/docB.pdf');
+      expect(deleteFileMock).toHaveBeenCalledWith('http://s3.local/docC.pdf');
+    });
+
+    it('Doğrudan klasörün içinde kilitli bir belge varsa silme işlemi engellenmeli (400 Bad Request)', async () => {
+      const { token, user } = await getAuthToken('del_lock_direct@uni.edu', 'INV-DLOCK1');
+
+      const folder = await db.orm.public.Folder.create({ name: 'Korumalı Klasör', parentId: null });
+      const lockedDoc = await db.orm.public.Document.create({
+        title: 'kilitli.pdf',
+        url: 'http://s3.local/kilitli.pdf',
+        hash: 'hash-del-lock-1',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folder.id,
+        isLocked: true
+      });
+
+      const response = await request(app)
+        .delete(`/folders/${folder.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/locked/i);
+
+      // Klasör ve dosya silinmemiş olmalı
+      const folderDb = await db.orm.public.Folder.where({ id: folder.id }).first();
+      expect(folderDb).not.toBeNull();
+
+      const docDb = await db.orm.public.Document.where({ id: lockedDoc.id }).first();
+      expect(docDb).not.toBeNull();
+
+      // S3 deleteFile çağrılmamalı
+      expect(deleteFileMock).not.toHaveBeenCalled();
+    });
+
+    it('Derinlerde bir alt klasörde kilitli bir belge varsa tüm ağacın silinmesi engellenmeli (recursive lock guard)', async () => {
+      const { token, user } = await getAuthToken('del_lock_deep@uni.edu', 'INV-DLOCK2');
+
+      const folderA = await db.orm.public.Folder.create({ name: 'Root', parentId: null });
+      const folderB = await db.orm.public.Folder.create({ name: 'Sub 1', parentId: folderA.id });
+      const folderC = await db.orm.public.Folder.create({ name: 'Sub 2', parentId: folderB.id });
+
+      // doc1 kökte kilitsiz, doc2 en derinde KİLİTLİ
+      await db.orm.public.Document.create({
+        title: 'doc1.pdf',
+        url: 'http://s3.local/doc1.pdf',
+        hash: 'hash-del-lock-2',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderA.id,
+        isLocked: false
+      });
+
+      await db.orm.public.Document.create({
+        title: 'locked-deep.pdf',
+        url: 'http://s3.local/locked-deep.pdf',
+        hash: 'hash-del-lock-3',
+        size: 100,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        folderId: folderC.id,
+        isLocked: true
+      });
+
+      const response = await request(app)
+        .delete(`/folders/${folderA.id}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/locked/i);
+
+      // Hiçbir klasör silinmemiş olmalı
+      const allFolders = await db.orm.public.Folder.where({}).all();
+      expect(allFolders).toHaveLength(3);
+
+      // Hiçbir dosya silinmemiş olmalı
+      const allDocs = await db.orm.public.Document.where({}).all();
+      expect(allDocs).toHaveLength(2);
+
+      // S3 deleteFile çağrılmamalı
+      expect(deleteFileMock).not.toHaveBeenCalled();
+    });
+  });
 });
+
 
