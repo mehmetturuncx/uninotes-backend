@@ -177,6 +177,19 @@ describe('Folder Management API: POST /folders', () => {
       expect(response.status).toBe(400);
     });
 
+    it('String olmayan klasör adı (örn. sayı) verildiğinde 400 Bad Request dönmeli', async () => {
+      const { token } = await getAuthToken('f_non_string@uni.edu', 'INV-FNONSTR');
+      const folder = await db.orm.public.Folder.create({ name: 'Ders', parentId: null });
+
+      const response = await request(app)
+        .patch(`/folders/${folder.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 123 });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('message');
+    });
+
     it('Klasör başka bir klasörün altına taşınabilmeli (valid parentId)', async () => {
       const { token } = await getAuthToken('f_move@uni.edu', 'INV-FMOVE');
       const folderA = await db.orm.public.Folder.create({ name: 'Fakülte', parentId: null });
