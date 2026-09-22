@@ -452,6 +452,86 @@ describe('Document Summarization API: POST /documents/:id/summarize', () => {
 
         expect(resUserB.status).toBe(200);
       });
+
+      it('Önbellekte zaten özeti olan dokümanlar (cached) rate limit kotasını tüketmemeli ve limit dolduğunda bile 200 dönmeli (Ticket 02)', async () => {
+        const { token, user } = await getAuthToken('rl_cached@uni.edu', 'RL_CODE_CACHED');
+
+        summarizeTextMock.mockResolvedValue('## Taze Özet');
+
+        // 1. Önceden özeti çıkarılmış bir doküman oluştur (summary dolu)
+        const cachedDoc = await db.orm.public.Document.create({
+          title: 'Zaten Ozetlenmis Not.pdf',
+          hash: 'hash-rl-cached-0',
+          size: 300,
+          mimeType: 'application/pdf',
+          userId: user.id,
+          status: 'COMPLETED',
+          textContent: 'Bu notun özeti önceden çıkarılmıştır en az yirmi karakter.',
+          summary: '## Mevcut Önbellek Özeti'
+        });
+
+        // 2. Henüz özeti OLMAYAN 5 taze doküman oluştur
+        const freshDocs = [];
+        for (let i = 1; i <= 5; i++) {
+          const doc = await db.orm.public.Document.create({
+            title: `Taze Not ${i}.pdf`,
+            hash: `hash-rl-fresh-${i}`,
+            size: 200,
+            mimeType: 'application/pdf',
+            userId: user.id,
+            status: 'COMPLETED',
+            textContent: `Taze doküman ${i} içeriğidir ve en az yirmi karakterden oluşur.`
+          });
+          freshDocs.push(doc);
+        }
+
+        // 3. Kullanıcı 10 kez cached dokümana istek atsın (kotayı tüketmemeli!)
+        for (let i = 0; i < 10; i++) {
+          const cachedRes = await request(app)
+            .post(`/documents/${cachedDoc.id}/summarize`)
+            .set('Authorization', `Bearer ${token}`);
+
+          expect(cachedRes.status).toBe(200);
+          expect(cachedRes.body.cached).toBe(true);
+          expect(cachedRes.body.summary).toBe('## Mevcut Önbellek Özeti');
+        }
+
+        // 4. Şimdi 5 taze dokümanı özetlesin (tüm 5 hakkını kullansın)
+        for (let i = 0; i < 5; i++) {
+          const freshRes = await request(app)
+            .post(`/documents/${freshDocs[i].id}/summarize`)
+            .set('Authorization', `Bearer ${token}`);
+
+          expect(freshRes.status).toBe(200);
+          expect(freshRes.body.cached).toBe(false);
+        }
+
+        // 5. 6. taze doküman oluştur ve özetlemeyi dene -> 429 Too Many Requests almalı!
+        const extraDoc = await db.orm.public.Document.create({
+          title: 'Fazla Not.pdf',
+          hash: 'hash-rl-fresh-extra',
+          size: 200,
+          mimeType: 'application/pdf',
+          userId: user.id,
+          status: 'COMPLETED',
+          textContent: 'Fazla doküman içeriğidir ve en az yirmi karakterden oluşur.'
+        });
+
+        const blockedRes = await request(app)
+          .post(`/documents/${extraDoc.id}/summarize`)
+          .set('Authorization', `Bearer ${token}`);
+
+        expect(blockedRes.status).toBe(429);
+
+        // 6. Kullanıcının taze özet kotası dolmuş olmasına rağmen, cached dokümana hala erişebilmeli!
+        const stillAccessibleRes = await request(app)
+          .post(`/documents/${cachedDoc.id}/summarize`)
+          .set('Authorization', `Bearer ${token}`);
+
+        expect(stillAccessibleRes.status).toBe(200);
+        expect(stillAccessibleRes.body.cached).toBe(true);
+        expect(stillAccessibleRes.body.summary).toBe('## Mevcut Önbellek Özeti');
+      });
     });
   });
 });

@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: User-Scoped Summarize Rate Limiter
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Requests to `POST /documents/:id/summarize` for documents with an existing summary (`cached: true`) do not increment the rate limiter counter or consume the user's quota.
-- [ ] A user who has exhausted their 5/10min summarization quota on unsummarized documents can still successfully retrieve already-cached summaries with HTTP 200 without receiving a 429 response.
-- [ ] Fresh summarization requests (requiring actual Gemini AI processing) continue to increment the counter and trigger 429 when the limit is reached.
-- [ ] Integration tests verify that cached hits do not increment the limiter and remain accessible even when rate limited.
+- [x] Requests to `POST /documents/:id/summarize` for documents with an existing summary (`cached: true`) do not increment the rate limiter counter or consume the user's quota.
+- [x] A user who has exhausted their 5/10min summarization quota on unsummarized documents can still successfully retrieve already-cached summaries with HTTP 200 without receiving a 429 response.
+- [x] Fresh summarization requests (requiring actual Gemini AI processing) continue to increment the counter and trigger 429 when the limit is reached.
+- [x] Integration tests verify that cached hits do not increment the limiter and remain accessible even when rate limited.
