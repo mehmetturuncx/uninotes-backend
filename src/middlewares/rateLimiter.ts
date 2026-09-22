@@ -1,4 +1,5 @@
 import rateLimit from "express-rate-limit";
+import { db } from "../prisma/db";
 
 export const registerLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -12,4 +13,18 @@ export const loginLimiter = rateLimit({
     max: 10,
     skipSuccessfulRequests: true,
     message: {message: "Çok fazla hatalı deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin."}  
+});
+
+export const summarizeLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 5,
+    message: {message: "Çok fazla özetleme isteği yaptınız. Lütfen 10 dakika sonra tekrar deneyin."},
+    keyGenerator: (req: any) => req.user?.id || req.ip,
+    validate: { keyGeneratorIpFallback: false },
+    skip: async (req:any) => {
+        const id = req.params?.id;
+        if(!id) return false;
+        const doc = await db.orm.public.Document.where({id}).first();
+        return Boolean(doc?.summary);
+    }
 });
