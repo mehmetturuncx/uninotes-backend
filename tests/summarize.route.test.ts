@@ -393,5 +393,65 @@ describe('Document Summarization API: POST /documents/:id/summarize', () => {
         expect(response.status).toBe(404);
       }
     });
+
+    describe('Rate Limiting (Ticket 01)', () => {
+      it('Aynı kullanıcı 10 dakika içinde en fazla 5 özetleme yapabilmeli, 6. istekte 429 dönmeli ve diğer kullanıcı etkilenmemeli', async () => {
+        const { token: tokenA, user: userA } = await getAuthToken('rl_user_a@uni.edu', 'RL_CODE_A');
+        const { token: tokenB, user: userB } = await getAuthToken('rl_user_b@uni.edu', 'RL_CODE_B');
+
+        summarizeTextMock.mockResolvedValue('## Test Özeti');
+
+        // User A için 6 farklı işlenmiş belge oluştur
+        const docsA = [];
+        for (let i = 1; i <= 6; i++) {
+          const doc = await db.orm.public.Document.create({
+            title: `Not A ${i}.pdf`,
+            hash: `hash-rl-a-${i}`,
+            size: 200,
+            mimeType: 'application/pdf',
+            userId: userA.id,
+            status: 'COMPLETED',
+            textContent: `Bu doküman ${i} numaralı geçerli bir ders notu içeriğidir en az yirmi karakter.`
+          });
+          docsA.push(doc);
+        }
+
+        // User B için 1 belge oluştur
+        const docB = await db.orm.public.Document.create({
+          title: 'Not B.pdf',
+          hash: 'hash-rl-b-1',
+          size: 200,
+          mimeType: 'application/pdf',
+          userId: userB.id,
+          status: 'COMPLETED',
+          textContent: 'User B için geçerli bir ders notu içeriğidir en az yirmi karakter.'
+        });
+
+        // 1-5. istekler User A için başarılı olmalı (200 OK)
+        for (let i = 0; i < 5; i++) {
+          const res = await request(app)
+            .post(`/documents/${docsA[i].id}/summarize`)
+            .set('Authorization', `Bearer ${tokenA}`);
+
+          expect(res.status).toBe(200);
+        }
+
+        // 6. istek User A için rate limit'e takılmalı (429 Too Many Requests)
+        const res6 = await request(app)
+          .post(`/documents/${docsA[5].id}/summarize`)
+          .set('Authorization', `Bearer ${tokenA}`);
+
+        expect(res6.status).toBe(429);
+        expect(res6.body).toHaveProperty('message');
+        expect(res6.body.message).toMatch(/çok fazla|too many/i);
+
+        // Farklı bir kullanıcı (User B) sınırlandırılmamalı (User-scoped isolation)
+        const resUserB = await request(app)
+          .post(`/documents/${docB.id}/summarize`)
+          .set('Authorization', `Bearer ${tokenB}`);
+
+        expect(resUserB.status).toBe(200);
+      });
+    });
   });
 });

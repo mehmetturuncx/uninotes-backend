@@ -6,6 +6,7 @@ import { uploadFile, deleteFile, getFile } from "../services/s3.service";
 import { db, getPool } from "../prisma/db";
 import { Queue } from "bullmq";
 import { summarizeText } from "../services/ai/gemini.service";
+import { summarizeLimiter } from "../middlewares/rateLimiter";
 
 const allowed_mime_types = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
@@ -225,7 +226,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     return res.status(200).json({ message: "Document deleted successfully!" });
 });
 
-router.post('/:id/summarize', authMiddleware, async (req, res) => {
+router.post('/:id/summarize', authMiddleware, summarizeLimiter, async (req, res) => {
     const id = req.params.id as string;
 
     const doc = await db.orm.public.Document.where({ id }).first();
