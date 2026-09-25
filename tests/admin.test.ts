@@ -430,5 +430,33 @@ describe('Admin System: Ticket 01 (Schema, Bootstrapping & Middleware)', () => {
       expect(subInDb).toBeNull();
       expect(docInDb).toBeNull();
     });
+
+    it('Admin kilitli bir dökümanı başka bir klasöre taşıyabilmeli (PATCH /documents/:id/folder)', async () => {
+      const targetFolder = await db.orm.public.Folder.create({ name: 'Hedef Klasör', parentId: null });
+      const lockedDoc = await createTestDoc(studentUser.id, null, true);
+
+      const res = await request(app)
+        .patch(`/documents/${lockedDoc.id}/folder`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ folderId: targetFolder.id });
+
+      expect(res.status).toBe(200);
+      expect(res.body.document.folderId).toBe(targetFolder.id);
+
+      const docInDb = await db.orm.public.Document.where({ id: lockedDoc.id }).first();
+      expect(docInDb?.folderId).toBe(targetFolder.id);
+    });
+
+    it('Normal öğrenci başkasının kilitli dökümanını başka bir klasöre taşımaya çalıştığında 403 Forbidden dönmeli', async () => {
+      const targetFolder = await db.orm.public.Folder.create({ name: 'Hedef Klasör 2', parentId: null });
+      const lockedDoc = await createTestDoc(adminUser.id, null, true);
+
+      const res = await request(app)
+        .patch(`/documents/${lockedDoc.id}/folder`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ folderId: targetFolder.id });
+
+      expect(res.status).toBe(403);
+    });
   });
 });

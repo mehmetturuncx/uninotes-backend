@@ -27,7 +27,6 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     }
 
     res.status(statusCode).json({
-        success: false,
         message
     });
 });

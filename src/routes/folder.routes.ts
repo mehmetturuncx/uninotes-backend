@@ -10,7 +10,7 @@ router.post('/', authMiddleware, async (req, res) => {
     const { name, parentId } = req.body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
-        return res.status(400).json({ message: "Folder name is required and cannot be empty." });
+        throw new AppError("Folder name is required and cannot be empty.", 400);
     }
 
     if (parentId) {
@@ -19,7 +19,7 @@ router.post('/', authMiddleware, async (req, res) => {
         }).first();
 
         if (!parentFolder) {
-            return res.status(404).json({ message: "Parent folder not found." });
+            throw new AppError("Parent folder not found.", 404);
         }
     }
 
@@ -35,7 +35,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const user = req.user?.id;
 
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
 
 
@@ -66,7 +66,7 @@ router.patch('/:id', authMiddleware, async (req, res) => {
 
     if (parentId !== undefined) {
         if (parentId === id) {
-            return res.status(400).json({ message: "Cannot move a folder into itself or its descendants." });
+            throw new AppError("Cannot move a folder into itself or its descendants.", 400);
         }
 
         if (parentId === null) {
@@ -76,13 +76,13 @@ router.patch('/:id', authMiddleware, async (req, res) => {
             const targetFolder = await db.orm.public.Folder.where({ id: parentId }).first();
 
             if (!targetFolder) {
-                return res.status(404).json({ message: "Target parent folder not found!" });
+                throw new AppError("Target parent folder not found!", 404);
             }
 
             let curr: any = targetFolder;
             while (curr?.parentId) {
                 if (curr.parentId === id) {
-                    return res.status(400).json({ message: "Cannot move a folder into itself or its descendants." })
+                    throw new AppError("Cannot move a folder into itself or its descendants.", 400);
                 }
 
                 curr = await db.orm.public.Folder.where({ id: curr.parentId }).first();
@@ -103,14 +103,14 @@ router.patch('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
     const user = req.user?.id;
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
 
     const folderId = req.params.id as string;
 
     const folder = await db.orm.public.Folder.where({ id: folderId }).first();
     if (!folder) {
-        return res.status(404).json({ message: "Folder not found." });
+        throw new AppError("Folder not found.", 404);
     }
 
     const pool = getPool();
@@ -140,10 +140,35 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         // 3. Kilit Koruması: Alt ağaçta herhangi bir kilitli belge varsa silmeyi iptal et
         const hasLockedDoc = docsResult.rows.some(doc => doc.isLocked === true);
         if (hasLockedDoc && (req.query.force !== 'true' || req.user?.isAdmin !== true)) {
-            return res.status(400).json({ message: "Cannot delete folder containing locked documents." });
+            throw new AppError("Cannot delete folder containing locked documents.", 400);
         }
 
-        // 4. S3 / R2 üzerindeki dosyaları sil
+        await client.query('BEGIN');
+        try {
+            // 4. Veritabanındaki dokümanları sil
+            await client.query(
+                `DELETE FROM "document" WHERE "folderId" = ANY($1);`,
+                [folderIds]
+            );
+
+            // 5. Foreign key kısıtını engellemek için önce parentId'leri sıfırla, ardından klasörleri sil
+            await client.query(
+                `UPDATE "folder" SET "parentId" = NULL WHERE id = ANY($1);`,
+                [folderIds]
+            );
+            await client.query(
+                `DELETE FROM "folder" WHERE id = ANY($1);`,
+                [folderIds]
+            );
+
+            await client.query('COMMIT');
+        }
+        catch(dbError) {
+            await client.query('ROLLBACK');
+            throw dbError;
+        }
+
+        // 6. S3 / R2 üzerindeki dosyaları sil
         for (const doc of docsResult.rows) {
             if (doc.url) {
                 try {
@@ -153,22 +178,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
                 }
             }
         }
-
-        // 5. Veritabanındaki dokümanları sil
-        await client.query(
-            `DELETE FROM "document" WHERE "folderId" = ANY($1);`,
-            [folderIds]
-        );
-
-        // 6. Foreign key kısıtını engellemek için önce parentId'leri sıfırla, ardından klasörleri sil
-        await client.query(
-            `UPDATE "folder" SET "parentId" = NULL WHERE id = ANY($1);`,
-            [folderIds]
-        );
-        await client.query(
-            `DELETE FROM "folder" WHERE id = ANY($1);`,
-            [folderIds]
-        );
 
         return res.status(200).json({ message: "Folder and its contents deleted successfully." });
     } finally {

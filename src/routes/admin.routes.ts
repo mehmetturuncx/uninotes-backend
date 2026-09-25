@@ -3,6 +3,7 @@ import { authMiddleware } from "../middlewares/auth.middleware";
 import { adminMiddleware } from "../middlewares/admin.middleware";
 import crypto from 'node:crypto';
 import { db } from "../prisma/db";
+import { AppError } from "../errors/AppError";
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.post('/invites', async (req, res) => {
         count > 100;
 
     if (isInvalid) {
-        return res.status(400).json({ message: "Bad Request" });
+        throw new AppError("Bad Request", 400);
     }
 
     const createdInvites = [];

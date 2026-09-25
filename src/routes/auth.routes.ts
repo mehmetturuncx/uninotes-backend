@@ -4,6 +4,7 @@ import  jwt  from "jsonwebtoken";
 import { db } from "../prisma/db";
 import bcrypt from "bcryptjs";
 import { registerLimiter, loginLimiter } from "../middlewares/rateLimiter";
+import { AppError } from "../errors/AppError";
 
 const router = Router();
  
@@ -12,16 +13,13 @@ router.post('/register',registerLimiter,async (req,res)=>{
     const validation = registerSchema.safeParse(req);
 
     if(!validation.success) {
-        return res.status(400).json({
-            message: "Your informations are not correct.",
-            errors: validation.error.issues
-        });
+        throw new AppError("Your informations are not correct.", 400);
     }
 
     const invCode = await db.orm.public.InviteCode.where({ code: req.body.inviteCode}).first();
 
     if(!invCode || invCode.isUsed == true) {
-        return res.status(400).json({message: "Invalid or used invitation code."});
+        throw new AppError("Invalid or used invitation code.", 400);
     }
 
     const password = validation.data.body.password;
@@ -29,7 +27,7 @@ router.post('/register',registerLimiter,async (req,res)=>{
 
     const isExist = await db.orm.public.User.where({email}).first();
     if(isExist){
-        return res.status(400).json({message: "This email is already used."});
+        throw new AppError("This email is already used.", 400);
     }
  
     const hashedPassword = await bcrypt.hash(password,10);
@@ -65,10 +63,7 @@ router.post('/login',loginLimiter,async (req,res)=>{
     const validation = loginSchema.safeParse(req);
 
     if(!validation.success) {
-        return res.status(400).json({
-            message: "Your informations are not correct.",
-            errors: validation.error.issues
-        });
+        throw new AppError("Your informations are not correct.", 400);
     }
     
     const email = validation.data.body.email;
@@ -77,12 +72,12 @@ router.post('/login',loginLimiter,async (req,res)=>{
     const user = await db.orm.public.User.where({email}).first();
 
     if(!user) {
-        return res.status(401).json({message: "Incorrect email or password!"});
+        throw new AppError("Incorrect email or password!", 401);
     }
 
     const passCheck = await bcrypt.compare(password,user.password);
     if(!passCheck) {
-        return res.status(401).json({message: "Incorrect email or password!"});
+        throw new AppError("Incorrect email or password!", 401);
     }
     const token = jwt.sign(
             {id: user.id,

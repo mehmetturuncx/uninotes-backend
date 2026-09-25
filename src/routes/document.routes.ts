@@ -7,6 +7,7 @@ import { db, getPool } from "../prisma/db";
 import { Queue } from "bullmq";
 import { summarizeText } from "../services/ai/gemini.service";
 import { summarizeLimiter } from "../middlewares/rateLimiter";
+import { AppError } from "../errors/AppError";
 
 const allowed_mime_types = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 
@@ -39,11 +40,11 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     const folderId = req.body.folderId;
 
     if (!user) {
-        return res.status(401).json({ message: "User could bot be verified!" });
+        throw new AppError("User could bot be verified!", 401);
     }
 
     if (!req.file) {
-        return res.status(400).json({ message: "File not found!" });
+        throw new AppError("File not found!", 400);
     }
 
     if (folderId) {
@@ -52,19 +53,19 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
         }).first();
 
         if (!folderControl) {
-            return res.status(404).json({ message: "Folder not found!" });
+            throw new AppError("Folder not found!", 404);
         }
     }
 
     if (!allowed_mime_types.includes(req.file.mimetype)) {
-        return res.status(400).json({ message: "Unsupported file type..." });
+        throw new AppError("Unsupported file type...", 400);
     }
 
     const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
 
     const hashExist = await db.orm.public.Document.where({ hash }).first();
     if (hashExist) {
-        return res.status(409).json({ message: "This file already exists!" });
+        throw new AppError("This file already exists!", 409);
     }
     const uploadedFile = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
 
@@ -104,11 +105,11 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
 router.get('/search', authMiddleware, async (req, res) => {
     const user = req.user?.id;
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
     const q = req.query.q as string;
     if (!q) {
-        return res.status(400).json({ message: "Search term is required!" });
+        throw new AppError("Search term is required!", 400);
     }
 
     const client = await getPool().connect();
@@ -157,7 +158,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const folderId = req.query.folderId as string;
 
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
 
     let targetFolderId: string | null = null;
@@ -186,7 +187,7 @@ router.get('/:id/file', async (req, res) => {
     const document = await db.orm.public.Document.where({ id }).first();
 
     if (!document || !document.url) {
-        return res.status(404).json({ message: "Document not found!" });
+        throw new AppError("Document not found!", 404);
     }
 
     const fileBuffer = await getFile(document.url as string);
@@ -198,7 +199,7 @@ router.get('/:id/file', async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
     const user = req.user?.id;
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
 
     const documentId = req.params.id as string;
@@ -206,11 +207,11 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const document = await db.orm.public.Document.where({ id: documentId }).first();
 
     if (!document) {
-        return res.status(404).json({ message: "Document not found!" });
+        throw new AppError("Document not found!", 404);
     }
 
     if (document?.userId !== user && req.user?.isAdmin !== true) {
-        return res.status(403).json({ message: "You do not have permission to delete this file." });
+        throw new AppError("You do not have permission to delete this file.", 403);
     }
 
     if (document.url) {
@@ -232,7 +233,7 @@ router.post('/:id/summarize', authMiddleware, summarizeLimiter, async (req, res)
     const doc = await db.orm.public.Document.where({ id }).first();
 
     if (!doc) {
-        return res.status(404).json({ message: "Document not found!" });
+        throw new AppError("Document not found!", 404);
     }
 
     if (doc.summary) {
@@ -240,21 +241,21 @@ router.post('/:id/summarize', authMiddleware, summarizeLimiter, async (req, res)
     }
 
     if (doc.status === "FAILED") {
-        return res.status(400).json({ message: "Document processing failed. Cannot summarize." });
+        throw new AppError("Document processing failed. Cannot summarize.", 400);
     }
 
     if (doc.status !== "COMPLETED") {
-        return res.status(400).json({ message: "Document is still processing. Please wait." });
+        throw new AppError("Document is still processing. Please wait.", 400);
     }
 
     const nonWhitespaceLength = (doc.textContent || "").replace(/\s/g, "").length;
     if (nonWhitespaceLength < 20) {
-        return res.status(400).json({ message: "Document has insufficient text to summarize." });
+        throw new AppError("Document has insufficient text to summarize.", 400);
     }
 
     const summary = await summarizeText(doc.textContent || "");
     if (!summary) {
-        return res.status(500).json({ message: "Failed to generate summary." });
+        throw new AppError("Failed to generate summary.", 500);
     }
 
     await db.orm.public.Document.where({ id }).update({ summary });
@@ -267,18 +268,18 @@ router.patch('/:id/lock', authMiddleware, async (req, res) => {
     const user = req.user?.id;
 
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
     const documentId = req.params.id as string;
 
     const document = await db.orm.public.Document.where({ id: documentId }).first();
 
     if (!document) {
-        return res.status(404).json({ message: "Document not found!" });
+        throw new AppError("Document not found!", 404);
     }
 
     if (document.userId !== user && req.user?.isAdmin !== true) {
-        return res.status(403).json({ message: "Forbidden" });
+        throw new AppError("Forbidden", 403);
     }
 
     const updatedDoc = await db.orm.public.Document.where({ id: documentId }).update({
@@ -294,24 +295,24 @@ router.patch('/:id/folder', authMiddleware, async (req, res) => {
     const user = req.user?.id;
 
     if (!user) {
-        return res.status(401).json({ message: "Unauthorized" });
+        throw new AppError("Unauthorized", 401);
     }
 
     const document = await db.orm.public.Document.where({ id: documentId }).first();
 
     if (!document) {
-        return res.status(404).json({ message: "Document not found!" });
+        throw new AppError("Document not found!", 404);
     }
 
-    if (document.isLocked && document.userId !== user) {
-        return res.status(403).json({ message: "Forbidden" });
+    if (document.isLocked && document.userId !== user && req.user?.isAdmin !== true) {
+        throw new AppError("Forbidden", 403);
     }
 
     if (folderId) {
         const targetFolder = await db.orm.public.Folder.where({ id: folderId }).first();
 
         if (!targetFolder) {
-            return res.status(404).json({ message: "Target folder not found." });
+            throw new AppError("Target folder not found.", 404);
         }
     }
     const updatedDoc = await db.orm.public.Document.where({ id: documentId }).update({ folderId: folderId || null });
@@ -319,4 +320,4 @@ router.patch('/:id/folder', authMiddleware, async (req, res) => {
     return res.status(200).json({ document: updatedDoc });
 });
 
-export default router;
+export default router;
