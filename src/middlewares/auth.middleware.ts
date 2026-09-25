@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 declare global {
     namespace Express {
         interface Request {
-            user?: {id: string; email: string};
+            user?: {id: string; email: string; isAdmin?: boolean};
         }
     }
 }
@@ -24,7 +24,7 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction):
 
     try{
         const secret = process.env.JWT_SECRET || 'default_secret';
-        const decoded = jwt.verify(token, secret) as unknown as {id:string; email: string};
+        const decoded = jwt.verify(token, secret) as unknown as {id:string; email: string; isAdmin?: boolean};
         req.user = decoded;
         next();
     }

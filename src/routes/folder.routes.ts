@@ -139,7 +139,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
         // 3. Kilit Koruması: Alt ağaçta herhangi bir kilitli belge varsa silmeyi iptal et
         const hasLockedDoc = docsResult.rows.some(doc => doc.isLocked === true);
-        if (hasLockedDoc) {
+        if (hasLockedDoc && (req.query.force !== 'true' || req.user?.isAdmin !== true)) {
             return res.status(400).json({ message: "Cannot delete folder containing locked documents." });
         }
 

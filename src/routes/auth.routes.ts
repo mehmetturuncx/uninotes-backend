@@ -34,7 +34,14 @@ router.post('/register',registerLimiter,async (req,res)=>{
  
     const hashedPassword = await bcrypt.hash(password,10);
 
-    const newUser = await db.orm.public.User.create({email,password: hashedPassword});
+    let isAdmin = false;
+    const users = await db.orm.public.User.where({}).first();
+
+    if(!users) {
+        isAdmin = true;
+    }
+
+    const newUser = await db.orm.public.User.create({email,password: hashedPassword, isAdmin});
 
     await db.orm.public.InviteCode
         .where({id: invCode.id})
@@ -42,14 +49,15 @@ router.post('/register',registerLimiter,async (req,res)=>{
     
     const token = jwt.sign(
             {id: newUser.id,
-            email: email},
+            email: email,
+            isAdmin},
             process.env.JWT_SECRET || "default_secret",
             {expiresIn: "1h"}
         );
     
     return res.status(201).json({
         token,
-        user: {id: newUser.id,email}
+        user: {id: newUser.id,email,isAdmin}
     });
 });
 
@@ -78,7 +86,8 @@ router.post('/login',loginLimiter,async (req,res)=>{
     }
     const token = jwt.sign(
             {id: user.id,
-            email: email},
+            email: email,
+            isAdmin: user.isAdmin},
             process.env.JWT_SECRET || "default_secret",
             {expiresIn: "1h"}
         );
@@ -86,7 +95,7 @@ router.post('/login',loginLimiter,async (req,res)=>{
         return res.status(200).json({
             message: "Login succesfull!",
             token,
-            user: { id: user.id, email }
+            user: { id: user.id, email, isAdmin: user.isAdmin }
         });
 });
 
