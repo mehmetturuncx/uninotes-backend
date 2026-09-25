@@ -449,6 +449,13 @@
                   "kind": "scalar"
                 }
               },
+              "isAdmin": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
               "password": {
                 "nullable": false,
                 "type": {
@@ -491,6 +498,9 @@
                 },
                 "id": {
                   "column": "id"
+                },
+                "isAdmin": {
+                  "column": "isAdmin"
                 },
                 "password": {
                   "column": "password"
@@ -836,6 +846,15 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "isAdmin": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
+                },
                 "password": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -879,7 +898,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "7376574f83b414e60ed911ad80449c8c360ab335169ad82ec280f06ccb0dd21b"
+    "storageHash": "b91dd133997215c4f445a4faa160a0d805654a79e0815966ee8cb325114d53dc"
   },
   "execution": {
     "executionHash": "5b3b392d2cf0305b0a5140ea5d7d39786b99ef7fdc9ab347958f194bdb2345aa",

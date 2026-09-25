@@ -209,7 +209,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
         return res.status(404).json({ message: "Document not found!" });
     }
 
-    if (document?.userId !== user) {
+    if (document?.userId !== user && req.user?.isAdmin !== true) {
         return res.status(403).json({ message: "You do not have permission to delete this file." });
     }
 
@@ -277,7 +277,7 @@ router.patch('/:id/lock', authMiddleware, async (req, res) => {
         return res.status(404).json({ message: "Document not found!" });
     }
 
-    if (document.userId !== user) {
+    if (document.userId !== user && req.user?.isAdmin !== true) {
         return res.status(403).json({ message: "Forbidden" });
     }
 
