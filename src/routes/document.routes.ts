@@ -69,37 +69,48 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     }
     const uploadedFile = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
 
-    const createdDoc = await db.orm.public.Document.create({
-        title: req.file.originalname,
-        url: uploadedFile,
-        hash: hash,
-        size: req.file.buffer.length,
-        mimeType: req.file.mimetype,
-        userId: user,
-        status: "PENDING",
-        folderId: folderId || null
-    });
+    let createdDoc: any = null;
 
-    if (createdDoc) {
-        await ocr_queue.add('ocr-job', {
-            documentId: createdDoc.id,
-            url: createdDoc.url,
-            mimeType: createdDoc.mimeType
-        }, {
-            attempts: 3, backoff: {
-                type: 'fixed', delay: 1000
+    try {
+        createdDoc = await db.orm.public.Document.create({
+            title: req.file.originalname,
+            url: uploadedFile,
+            hash: hash,
+            size: req.file.buffer.length,
+            mimeType: req.file.mimetype,
+            userId: user,
+            status: "PENDING",
+            folderId: folderId || null
+        });
+
+        if (createdDoc) {
+            await ocr_queue.add('ocr-job', {
+                documentId: createdDoc.id,
+                url: createdDoc.url,
+                mimeType: createdDoc.mimeType
+            }, {
+                attempts: 3, backoff: {
+                    type: 'fixed', delay: 1000
+                }
+            });
+        }
+        const fileViewUrl = `${req.protocol}://${req.get('host')}/documents/${createdDoc.id}/file`;
+
+        return res.status(201).json({
+            document: {
+                ...createdDoc,
+                url: fileViewUrl
             }
         });
     }
-
-    const fileViewUrl = `${req.protocol}://${req.get('host')}/documents/${createdDoc.id}/file`;
-
-    return res.status(201).json({
-        document: {
-            ...createdDoc,
-            url: fileViewUrl
+    catch (err) {
+        if (createdDoc) {
+            await db.orm.public.Document.where({id: createdDoc.id}).delete();
         }
-    });
+        await deleteFile(uploadedFile);
+        throw err;
+    }
+
 });
 
 router.get('/search', authMiddleware, async (req, res) => {

@@ -3,10 +3,12 @@ import request from 'supertest';
 import crypto from 'crypto';
 
 export const getFileMock = vi.fn().mockResolvedValue(Buffer.from('mock file buffer content'));
+export const deleteFileMock = vi.fn().mockResolvedValue(undefined);
+export const uploadFileMock = vi.fn().mockResolvedValue('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf');
 
 vi.mock('../src/services/s3.service', () => ({
-  uploadFile: vi.fn().mockResolvedValue('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf'),
-  deleteFile: vi.fn().mockResolvedValue(undefined),
+  uploadFile: (...args: any[]) => uploadFileMock(...args),
+  deleteFile: (...args: any[]) => deleteFileMock(...args),
   getFile: (...args: any[]) => getFileMock(...args)
 }));
 
@@ -160,6 +162,39 @@ describe('Document Upload & Deduplication API', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toMatch(/unsupported/i);
+    });
+
+    it('Veritabanına kayıt adımı başarısız olursa S3 e yüklenen dosya telafi edilerek silinmeli (orphan file olmamalı)', async () => {
+      const { token } = await getAuthToken('test_db_fail@uni.edu', 'CODE_DB_FAIL');
+      const fileBuffer = Buffer.from('test db fail content');
+
+      vi.spyOn(db.orm.public.Document, 'create').mockRejectedValueOnce(new Error('DB connection dropped'));
+
+      const response = await request(app)
+        .post('/documents/upload')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', fileBuffer, 'db_fail.pdf');
+
+      expect(response.status).toBe(500);
+      expect(deleteFileMock).toHaveBeenCalledWith('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf');
+    });
+
+    it('Kuyruk adımı (ocr_queue.add) başarısız olursa S3 teki dosya ve DB deki kayıt silinmeli (rollback)', async () => {
+      const { token } = await getAuthToken('test_queue_fail@uni.edu', 'CODE_Q_FAIL');
+      const fileBuffer = Buffer.from('test queue fail content');
+
+      addMock.mockRejectedValueOnce(new Error('Redis is down'));
+
+      const response = await request(app)
+        .post('/documents/upload')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', fileBuffer, 'queue_fail.pdf');
+
+      expect(response.status).toBe(500);
+      expect(deleteFileMock).toHaveBeenCalledWith('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf');
+
+      const allDocs = await db.orm.public.Document.all();
+      expect(allDocs).toHaveLength(0);
     });
   });
 
