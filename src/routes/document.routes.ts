@@ -253,6 +253,10 @@ router.post('/:id/summarize', authMiddleware, summarizeLimiter, async (req, res)
         throw new AppError("Document has insufficient text to summarize.", 400);
     }
 
+    if (typeof doc.textContent === 'string' && doc.textContent?.length > 100000) {
+        throw new AppError("Document text is too long to summarize.", 400);
+    }
+
     const summary = await summarizeText(doc.textContent || "");
     if (!summary) {
         throw new AppError("Failed to generate summary.", 500);

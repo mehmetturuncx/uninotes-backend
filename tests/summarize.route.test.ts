@@ -376,6 +376,31 @@ describe('Document Summarization API: POST /documents/:id/summarize', () => {
       expect(summarizeTextMock).toHaveBeenCalledWith(hugeText);
     });
 
+    it('100.000 karakterden uzun metinlerde 400 Bad Request dönmeli ve AI çağrılmamalı', async () => {
+      const { token, user } = await getAuthToken('sum_toolong@uni.edu', 'SUM_CODE_TOOLONG');
+
+      const overlyLongText = 'A'.repeat(100001);
+
+      const doc = await db.orm.public.Document.create({
+        title: 'Cok Uzun Not.pdf',
+        hash: 'hash-sum-toolong',
+        size: 100001,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED',
+        textContent: overlyLongText
+      });
+
+      const response = await request(app)
+        .post(`/documents/${doc.id}/summarize`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/too long/i);
+      expect(summarizeTextMock).not.toHaveBeenCalled();
+    });
+
+
     it('Frontend URL enjeksiyonu veya geçersiz ID parametresinde çökmeden 404 dönmeli', async () => {
       const { token } = await getAuthToken('sum_param@uni.edu', 'SUM_CODE_PARAM');
 
