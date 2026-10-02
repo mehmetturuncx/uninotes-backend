@@ -19,6 +19,9 @@ export const startOcrWorker = (RedisConnection: any) => {
             .update({ status: "PROCESSING" });
 
         const response = await fetch(url);
+        if(!response.ok){
+            throw new Error(`Failed to fetch file from storage: ${response.statusText}`);
+        }
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 

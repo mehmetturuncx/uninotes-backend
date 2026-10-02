@@ -29,8 +29,10 @@ vi.mock('pdf-parse', () => ({
 }));
 
 // We mock S3 upload file stream download (worker will need to fetch the file to parse it)
-// But to keep it simple, the worker can just pretend to download it, or we can mock global fetch
 global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: 'OK',
     arrayBuffer: vi.fn().mockResolvedValue(Buffer.from('mock pdf buffer'))
 }) as any;
 
@@ -186,4 +188,46 @@ describe('Worker Seam: OCR Processor', () => {
     // Wait, BullMQ's "attempts" is the TOTAL number of attempts. So 3 total.
     expect(getTextMock).toHaveBeenCalledTimes(3);
   });
+
+  it('Hata senaryosu: Dosya indirilemiyorsa (fetch not ok / 404) 3 denemeden sonra FAILED statüsüne geçmeli', async () => {
+    const mockUser = await db.orm.public.User.create({
+      email: 'worker-404@uni.edu',
+      password: 'hash'
+    });
+
+    const doc = await db.orm.public.Document.create({
+      title: 'missing.pdf',
+      url: 'https://s3/missing.pdf',
+      hash: 'hash-missing',
+      size: 100,
+      mimeType: 'application/pdf',
+      userId: mockUser.id,
+      status: 'PENDING'
+    });
+
+    (global.fetch as any).mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      arrayBuffer: vi.fn().mockResolvedValue(Buffer.from('XML Error: NoSuchKey'))
+    });
+
+    let startOcrWorker = (await import('../src/worker/ocr.worker')).startOcrWorker;
+    worker = startOcrWorker(redisConnection);
+
+    await ocrQueue.add('ocr-job', {
+      documentId: doc.id,
+      url: doc.url
+    }, {
+      attempts: 3,
+      backoff: { type: 'fixed', delay: 100 }
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const updatedDoc = await db.orm.public.Document.where({ id: doc.id }).first();
+    expect(updatedDoc.status).toBe('FAILED');
+    expect(updatedDoc.textContent).toBeNull();
+  });
 });
+
