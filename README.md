@@ -147,7 +147,7 @@ npm run start
 | `GET` | `/documents` | Notları listele (opsiyonel `?folderId=uuid` veya `?folderId=root`) | ✓ |
 | `POST` | `/documents/upload` | PDF veya fotoğraf yükle (max 20MB, opsiyonel `folderId`) | ✓ |
 | `GET` | `/documents/search?q=` | Yazım toleranslı arama (başlık ve OCR metni) | ✓ |
-| `GET` | `/documents/:id/file` | Dosyayı tarayıcıda aç (proxy stream) | ✗ |
+| `GET` | `/documents/:id/file` | Dosyayı tarayıcıda aç (proxy stream) | ✓ |
 | `POST` | `/documents/:id/summarize` | AI ile özetle (Max 5/10dk, önbellek muafiyeti) | ✓ |
 | `PATCH` | `/documents/:id/lock` | Belgeyi kilitle / kilidini aç (Sahibi veya Admin) | ✓ |
 | `PATCH` | `/documents/:id/folder` | Belgenin klasörünü değiştir (Kilitli belgeleri sahibi veya Admin taşıyabilir) | ✓ |
@@ -157,7 +157,7 @@ npm run start
 
 ## 🔒 Güvenlik & Güvenilirlik
 
-- **JWT (1 saat ömür):** Tüm korumalı uçlarda `Authorization: Bearer <token>` zorunlu.
+- **JWT (1 saat ömür):** Tüm korumalı uçlarda `Authorization: Bearer <token>` zorunlu (dosya görüntüleme ucunda tarayıcı önizleme uyumluluğu için `?token=` parametresi de desteklenir).
 - **Yönetici Kontrolü (`adminMiddleware`):** `/admin` rotaları ve admin müdahale işlemleri strictly admin kontrolü altındadır (`403 Forbidden`).
 - **Kullanıcı Bazlı Rate Limiting:**
   - Kayıt: 15 dk'da max 5 deneme.

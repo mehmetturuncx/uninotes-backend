@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import crypto from 'crypto';
 
+export const getFileMock = vi.fn().mockResolvedValue(Buffer.from('mock file buffer content'));
+
 vi.mock('../src/services/s3.service', () => ({
-  uploadFile: vi.fn().mockResolvedValue('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf')
+  uploadFile: vi.fn().mockResolvedValue('https://mock-s3-bucket.s3.amazonaws.com/test-doc.pdf'),
+  deleteFile: vi.fn().mockResolvedValue(undefined),
+  getFile: (...args: any[]) => getFileMock(...args)
 }));
 
 // BullMQ Queue Mock
@@ -466,6 +470,61 @@ describe('Document Upload & Deduplication API', () => {
 
       const dbDoc = await db.orm.public.Document.where({ id: doc.id }).first();
       expect(dbDoc?.folderId).toBe(folder.id);
+    });
+  });
+
+  describe('GET /documents/:id/file (Proxy Stream with Auth & Query Token)', () => {
+    let testDoc: any;
+    let validToken: string;
+
+    beforeEach(async () => {
+      const { token, user } = await getAuthToken('stream_user@uni.edu', 'INV-STREAM-1');
+      validToken = token;
+
+      testDoc = await db.orm.public.Document.create({
+        title: 'stream-sample.pdf',
+        url: 'https://mock-s3-bucket.s3.amazonaws.com/stream-sample.pdf',
+        hash: 'hash-stream-1',
+        size: 1024,
+        mimeType: 'application/pdf',
+        userId: user.id,
+        status: 'COMPLETED'
+      });
+    });
+
+    it('Token olmadan (ne header ne query) istek atıldığında 401 Unauthorized dönmeli', async () => {
+      const res = await request(app).get(`/documents/${testDoc.id}/file`);
+      expect(res.status).toBe(401);
+    });
+
+    it('Geçersiz bir token gönderildiğinde 401 Unauthorized dönmeli', async () => {
+      const resHeader = await request(app)
+        .get(`/documents/${testDoc.id}/file`)
+        .set('Authorization', 'Bearer invalid_token');
+      expect(resHeader.status).toBe(401);
+
+      const resQuery = await request(app)
+        .get(`/documents/${testDoc.id}/file?token=invalid_token`);
+      expect(resQuery.status).toBe(401);
+    });
+
+    it('Query parametresinde geçerli token ile (?token=...) dosya başarıyla getirilmeli (200 OK)', async () => {
+      const res = await request(app)
+        .get(`/documents/${testDoc.id}/file?token=${validToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/pdf');
+      expect(res.headers['content-disposition']).toBe('inline');
+    });
+
+    it('Header içinde geçerli Bearer token ile dosya başarıyla getirilmeli (200 OK)', async () => {
+      const res = await request(app)
+        .get(`/documents/${testDoc.id}/file`)
+        .set('Authorization', `Bearer ${validToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/pdf');
+      expect(res.headers['content-disposition']).toBe('inline');
     });
   });
 });

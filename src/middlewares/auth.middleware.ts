@@ -11,12 +11,18 @@ declare global {
 
 export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
     const authHeader = req.headers.authorization;
-    if(!authHeader || !authHeader.startsWith('Bearer ')) {
-        res.status(401).json({message: 'Token not found.'});
-        return;
+
+    let token: string | undefined;
+    
+    const queryToken = req.query.token;
+
+    if(authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    }
+    else if(queryToken && typeof queryToken === 'string') {
+        token = queryToken;
     }
 
-    const token = authHeader.split(' ')[1];
     if(!token) {
         res.status(401).json({message: "Unauthorized access, invalid format"});
         return;

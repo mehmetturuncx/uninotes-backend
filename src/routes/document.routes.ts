@@ -181,8 +181,8 @@ router.get('/', authMiddleware, async (req, res) => {
     return res.status(200).json({ documents: formattedDocuments });
 });
 
-router.get('/:id/file', async (req, res) => {
-    const id = req.params.id;
+router.get('/:id/file',authMiddleware, async (req, res) => {
+    const id = req.params.id as string;
 
     const document = await db.orm.public.Document.where({ id }).first();
 
@@ -320,4 +320,4 @@ router.patch('/:id/folder', authMiddleware, async (req, res) => {
     return res.status(200).json({ document: updatedDoc });
 });
 
-export default router;
+export default router;
