@@ -22,6 +22,9 @@ beforeAll(async () => {
     
     // Tabloları oluştur
     execSync('npx prisma db init', { env: process.env, stdio: 'inherit' });
+
+    const { initDatabase } = await import('../src/prisma/db');
+    await initDatabase();
   } catch (err: any) {
     console.warn('⚠️ Docker container başlatılamadı.', err?.message || err);
     process.env.DATABASE_URL = 'postgresql://disabled:disabled@127.0.0.1:54321/prevent_production_wipe';

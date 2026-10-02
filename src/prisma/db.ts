@@ -59,3 +59,17 @@ export const db = new Proxy({} as ReturnType<typeof postgres<Contract>>, {
     return typeof value === 'function' ? value.bind(client) : value;
   }
 });
+
+export async function initDatabase(): Promise<void> {
+  const client = await getPool().connect();
+
+  try{
+    await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm;');
+    await client.query('CREATE EXTENSION IF NOT EXISTS unaccent');
+    await client.query('CREATE INDEX IF NOT EXISTS "document_title_trgm_idx" ON "document" USING gin (title gin_trgm_ops)');
+    await client.query('CREATE INDEX IF NOT EXISTS "document_textContent_trgm_idx" ON "document" USING gin ("textContent" gin_trgm_ops)');
+  } 
+  finally {
+    client.release();
+  }
+}

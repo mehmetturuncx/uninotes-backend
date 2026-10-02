@@ -2,6 +2,7 @@ import app from './app';
 import { terminateTesseract } from './services/ocr/tesseract.provider';
 import { startOcrWorker } from './worker/ocr.worker';
 import IORedis from 'ioredis';
+import { initDatabase } from './prisma/db';
 
 const port = process.env.PORT || 3000;
 
@@ -16,6 +17,8 @@ const redisConnection = process.env.REDIS_URL
 // Worker'ı başlat
 const worker = startOcrWorker(redisConnection);
 console.log('🤖 OCR Worker started...');
+
+await initDatabase();
 
 // Web sunucusunu başlat
 const server = app.listen(port, () => {
